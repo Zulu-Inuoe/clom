@@ -1,14 +1,10 @@
 (in-package #:clom)
 
 #| Forward Declarations |#
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun %ftype-defined-p (type)
-    (handler-case (progn (cffi:foreign-type-size type) t)
-      (error () nil))))
 
 (defmacro %fdecl (type)
   `(eval-when (:compile-toplevel :load-toplevel :execute)
-     (unless (%ftype-defined-p ',type)
+     (unless (foreign-type-p ',type)
        (cffi:defctype ,type :void))
      ',type))
 

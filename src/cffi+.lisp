@@ -1,8 +1,7 @@
 (in-package #:clom)
 
 (defun foreign-type-p (foreign-type)
-  (handler-case
-      (and (cffi::parse-type foreign-type) t)
+  (handler-case (and (cffi::parse-type foreign-type) t)
     (error () nil)))
 
 (deftype foreign-type ()
