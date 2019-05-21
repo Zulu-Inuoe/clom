@@ -23,9 +23,13 @@
   (values
    :variable
    (destructuring-bind (name cffi-type &rest variables) arg-var
-     (mapcar (lambda (v)
-               (list v name cffi-type))
-             variables))))
+     (append
+      (mapcar (lambda (v)
+                (list v 'type 'cffi:foreign-pointer))
+              variables)
+      (mapcar (lambda (v)
+                (list v name cffi-type))
+              variables)))))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun cffi-type (var &optional env)
@@ -134,8 +138,6 @@
     :finally
        (setf bind-forms (nreverse bind-forms)
              decl-forms (nreverse decl-forms))
-       (when bind-forms
-         (push `(declare (type cffi:foreign-pointer ,@(mapcar #'car bind-forms))) decl-forms))
        (return
          `(let ,bind-forms
             ,@decl-forms
