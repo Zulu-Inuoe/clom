@@ -108,13 +108,13 @@
                                             slots))
          (decls (append
                  (mapcar (lambda (slot)
-                           `(declare (cffi-type ,(cffi:foreign-slot-type type slot) ,slot) ,slot))
+                           `(declare (cffi-type ,(cffi:foreign-slot-type type slot) ,slot)))
                          pointer-vars)
                  (mapcar (lambda (slot)
                            `(declare (cffi-type ,(type-pointer-type (cffi:foreign-slot-type type slot)) ,slot)))
                          vars-with-ptr-type))))
     `(cffi:with-foreign-slots (,slots ,variable ,type)
-       (locally ,@ decls
+       (locally ,@decls
          ,@body))))
 
 (defmacro cffi-let ((&rest bindings) &body body)
