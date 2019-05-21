@@ -1,11 +1,22 @@
 (in-package #:clom)
 
-(defun foreign-type-p (foreign-type)
-  (handler-case (and (cffi::parse-type foreign-type) t)
-    (error () nil)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun foreign-type-p (foreign-type)
+    (handler-case (and (cffi::parse-type foreign-type) t)
+      (error () nil))))
 
 (deftype foreign-type ()
+  "A foreign type designator known to CFFI"
   `(satisfies foreign-type-p))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun foreign-pointer-type-p (foreign-type)
+    (handler-case (eq (cffi::canonicalize-foreign-type foreign-type) :pointer)
+      (error () nil))))
+
+(deftype foreign-pointer-type ()
+  "A foreign type designator which is a pointer type."
+  `(satisfies foreign-pointer-type-p))
 
 (cltl2:define-declaration cffi-type (arg-var env-var)
   (declare (ignore env-var))
@@ -61,45 +72,74 @@
            ,@body))
       `(progn ,@body)))
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defgeneric type-pointer-type (type)
+    (:documentation "Get the foreign type that `type' points to.
+  eg:
+    (type-pointer-type '(:pointer :int)) ; =>
+    :int"))
+
+  (defmethod type-pointer-type (type)
+    (error "Type is not a pointer type: '~A'" type))
+
+  (defmethod type-pointer-type ((type symbol))
+    (type-pointer-type (cffi::parse-type type)))
+
+  (defmethod type-pointer-type ((type list))
+    (type-pointer-type (cffi::parse-type type)))
+
+  (defmethod type-pointer-type ((type cffi::foreign-type-alias))
+    (type-pointer-type (cffi::actual-type type)))
+
+  (defmethod type-pointer-type ((type cffi::foreign-pointer-type))
+    (let ((ptr-type (cffi::pointer-type type)))
+      (if ptr-type
+          (cffi::unparse-type ptr-type)
+          :void))))
+
 (defmacro with-foreign-slots* ((&rest slots) variable &body body &environment env)
+  "Similar to `cffi:with-foreign-slots', but uses `variable's `cffi-type'
+  Additionally, any `pointer' bindings, whether by the slot being a pointer,
+  or by using `(:pointer slot)` syntax will have its `cffi-type' declared as well."
   (let* ((type (cffi-type-or-error variable env))
          (pointer-bindings (remove-if-not (lambda (var) (and (consp var) (eq (car var) :pointer))) slots))
          (pointer-vars (mapcar #'cadr pointer-bindings))
-         (decls (mapcar (lambda (slot) `(declare (cffi-type ,(cffi:foreign-slot-type type slot) ,slot))) pointer-vars)))
+         (vars-with-ptr-type (remove-if-not (lambda (slot) (and (atom slot) (foreign-pointer-type-p (cffi:foreign-slot-type type slot))))
+                                            slots))
+         (decls (append
+                 (mapcar (lambda (slot)
+                           `(declare (cffi-type ,(cffi:foreign-slot-type type slot) ,slot) ,slot))
+                         pointer-vars)
+                 (mapcar (lambda (slot)
+                           `(declare (cffi-type ,(type-pointer-type (cffi:foreign-slot-type type slot)) ,slot)))
+                         vars-with-ptr-type))))
     `(cffi:with-foreign-slots (,slots ,variable ,type)
-       (locally
-           ,@decls
+       (locally ,@ decls
          ,@body))))
 
 (defmacro cffi-let ((&rest bindings) &body body)
-  (print`(let (,@(mapcar (lambda (b)
-                           (destructuring-bind (var type &optional value) b
-                             (declare (ignore type))
-                             `(,var ,value)))
-                         bindings))
-           ,@(mapcar (lambda (b)
-                       (destructuring-bind (var type &optional value) b
-                         (declare (ignore value))
-                         `(declare (cffi-type ,type ,var))))
-                     bindings)
-           ,@body)))
-
-;; (defgeneric type-pointer-type (type))
-
-;; (defmethod type-pointer-type ((type symbol))
-;;   (type-pointer-type (cffi::parse-type type)))
-
-;; (defmethod type-pointer-type ((type list))
-;;   (type-pointer-type (cffi::parse-type type)))
-
-;; (defmethod type-pointer-type ((type cffi::foreign-type-alias))
-;;   (type-pointer-type (cffi::actual-type type)))
-
-;; (defmethod type-pointer-type ((type cffi::foreign-pointer-type))
-;;   (let ((ptr-type (cffi::pointer-type type)))
-;;     (if ptr-type
-;;         (cffi::unparse-type ptr-type)
-;;         :void)))
+  "Similar to `let', but each binding is as follows:
+  (var type &optional (value (cffi:null-pointer)))
+  Will declare the `cffi-type' of each binding."
+  (loop
+    :with bind-forms := ()
+    :with decl-forms := ()
+    :for binding :in bindings
+    :do
+       (destructuring-bind (var type &optional (value '(cffi:null-pointer))) binding
+         (check-type var symbol)
+         (check-type type foreign-type)
+         (push `(,var ,value) bind-forms)
+         (push `(declare (cffi-type ,type ,var)) decl-forms))
+    :finally
+       (setf bind-forms (nreverse bind-forms)
+             decl-forms (nreverse decl-forms))
+       (when bind-forms
+         (push `(declare (type cffi:foreign-pointer ,@(mapcar #'car bind-forms))) decl-forms))
+       (return
+         `(let ,bind-forms
+            ,@decl-forms
+            ,@body))))
 
 ;; (defmacro &-> (variable &rest slot-path &environment env)
 ;;   (loop
