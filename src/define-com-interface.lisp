@@ -233,17 +233,24 @@
   Returns two values:
     1. The lambda list
     2. The function body"
-  (destructuring-bind (method-name (&key (convention :stdcall))
+  (destructuring-bind (method-name (&key (convention :stdcall) (invoke-kind :func))
                        return-type &body param-forms)
       method-form
     (check-type method-name symbol)
     (check-type convention (member :stdcall :cdecl))
+    (check-type invoke-kind (member :func :prop-get :prop-put :prop-put-ref))
     (check-type return-type foreign-type)
     (let* ((this-sym (make-symbol "THIS"))
            (params (parse-method-params param-forms)))
       (multiple-value-bind (lambda-args default-init-forms bind-forms bind-init-forms call-forms result-forms)
           (build-param-forms params)
+        (assert (or (eq invoke-kind :func)
+                    (and (eq invoke-kind :prop-get) (= 0 (length lambda-args)))
+                    (= 1 (length lambda-args))))
         (values
+         ;; Name
+         method-name
+         (list :convention convention :invoke-kind invoke-kind)
          ;; Lambda list
          `(,this-sym ,@lambda-args)
          ;; Body
@@ -308,10 +315,12 @@
        (eval-when (:compile-toplevel :load-toplevel :execute)
          ,@(loop
              :for method-form :in methods
-             :for (lambda-list body) := (multiple-value-list (create-com-method-fn if-name if-vtbl-struct method-form))
-             :for method-name := (car method-form)
+             :for (method-name method-properties lambda-list body) := (multiple-value-list (create-com-method-fn if-name if-vtbl-struct method-form))
+             :for setter-p := (member (getf method-properties :invoke-kind) '(:prop-put :prop-put-ref))
              :for fn-name := (intern (format nil "~A-~A" if-name method-name))
-             :collecting `(defun ,fn-name ,lambda-list ,@body)))
+             :for defun-name := (if (not setter-p) fn-name `(setf ,fn-name))
+             :for defun-lambda-list := (if (not setter-p) lambda-list (reverse lambda-list))
+             :collecting `(defun ,defun-name ,defun-lambda-list ,@body)))
 
        ;; Set interface attributes
        (eval-when (:compile-toplevel :load-toplevel :execute)
