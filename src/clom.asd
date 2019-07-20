@@ -7,9 +7,9 @@
   :components
   ((:file "package")
    (:file "cffi+")
+   (:file "strings")
    (:file "com-error")
    (:file "getprop")
-   (:file "strings")
    (:file "com-interface")
    (:file "define-com-interface")
    (:file "i-unknown")

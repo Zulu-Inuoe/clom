@@ -1,14 +1,5 @@
 (in-package #:clom)
 
-(defun tstring-to-lisp (tchar-buf &key (offset 0) count)
-  "Convert from a foreign `win32:lptstr' to a lisp string"
-  (values
-   (cffi:foreign-string-to-lisp
-    tchar-buf
-    :offset (* offset (cffi:foreign-type-size 'win32:tchar))
-    :count (and count (* count (cffi:foreign-type-size 'win32:tchar)))
-    :encoding win32:+win32-string-encoding+)))
-
 (defun error-code-string (hresult)
   "Retrieve the string representation for `hresult'."
   (with-foreign-object* (result '(:pointer win32:tchar))

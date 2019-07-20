@@ -55,3 +55,12 @@
       (unwind-protect
            (values (cffi:foreign-string-to-lisp bstr :count (win32:sys-string-byte-len bstr) :encoding win32:+win32-string-encoding+))
         (when free (win32:sys-free-string bstr)))))
+
+(defun tstring-to-lisp (tchar-buf &key (offset 0) count)
+  "Convert from a foreign `win32:lptstr' to a lisp string"
+  (values
+   (cffi:foreign-string-to-lisp
+    tchar-buf
+    :offset (* offset (cffi:foreign-type-size 'win32:tchar))
+    :count (and count (* count (cffi:foreign-type-size 'win32:tchar)))
+    :encoding win32:+win32-string-encoding+)))
