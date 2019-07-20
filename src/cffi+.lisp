@@ -137,7 +137,8 @@
        (setf bind-forms (nreverse bind-forms)
              decl-forms (nreverse decl-forms))
        (when bind-forms
-         (push `(declare (type cffi:foreign-pointer ,@(mapcar #'car bind-forms)))))
+         (push `(declare (type cffi:foreign-pointer ,@(mapcar #'car bind-forms)))
+               decl-forms))
        (return
          `(let ,bind-forms
             ,@decl-forms
