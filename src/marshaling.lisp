@@ -14,16 +14,22 @@
   `type' - The type of the parameter
   Should return two values:
     1. A binding form suitable for `cffi:with-foreign-objects' or nil, if no binding necessary
-    2. A form suitable for obtaining the CL value of the output parameter."))
+    2. A form suitable for obtaining the CL value of the output parameter.")
+  (:method (type)
+    (error "Don't know how to marshal output parameter '~A' of type '~S'" *param-name* type))
+  (:method ((type symbol))
+    "Attempt to parse the `type' as a cffi type, and resolve further."
+    (make-outparam-forms (cffi::parse-type type)))
+  (:method ((type list))
+    "Attempt to parse the `type' as a cffi type, and resolve further."
+    (make-outparam-forms (cffi::parse-type type))))
 
 (defgeneric make-outparam-ptr-forms (pointer-type)
   (:documentation
    "As `make-outparam-forms', but with a type resolved to (:pointer `pointer-type')
-  This allows specializing methods for pointers to specific types, such as `win32:bstr'"))
-
-(defmethod make-outparam-forms (type)
-  "Attempt to parse the `type' as a cffi type, and resolve further."
-  (make-outparam-forms (cffi::parse-type type)))
+  This allows specializing methods for pointers to specific types, such as `win32:bstr'")
+  (:method (pointer-type)
+    (error "Don't know how to marshal")))
 
 (defmethod make-outparam-forms ((type cffi::foreign-type-alias))
   "Dispatch to the actual type of the alias."
@@ -41,7 +47,13 @@
 (defmethod make-outparam-forms ((type cffi::foreign-string-type))
   (error "Bare string marshalling not implemented"))
 
-(defmethod make-outparam-ptr-forms (pointer-type)
+(defmethod make-outparam-ptr-forms ((pointer-type symbol))
+  "Base implementation that simply retrieves the value via `cffi:mem-ref'"
+  (values
+   `(,*param-tmp-name* ',pointer-type)
+   `(&* ,*param-tmp-name*)))
+
+(defmethod make-outparam-ptr-forms ((pointer-type list))
   "Base implementation that simply retrieves the value via `cffi:mem-ref'"
   (values
    `(,*param-tmp-name* ',pointer-type)
@@ -60,16 +72,22 @@
   Should return three values:
     1. A binding form suitable for `cffi:with-foreign-objects' or nil, if no binding necessary
     2. An 'init' form with which to initialize the parameter, or nil if no init necessary
-    3. A form suitable for obtaining the CL value of the output parameter."))
+    3. A form suitable for obtaining the CL value of the output parameter.")
+  (:method (type)
+    (error "Don't know how to marshal in-out parameter '~A' of type '~S'" *param-name* type))
+  (:method ((type symbol))
+    "Attempt to parse the `type' as a cffi type, and resolve further."
+    (make-inoutparam-forms (cffi::parse-type type)))
+  (:method ((type list))
+    "Attempt to parse the `type' as a cffi type, and resolve further."
+    (make-inoutparam-forms (cffi::parse-type type))))
 
 (defgeneric make-inoutparam-ptr-forms (pointer-type)
   (:documentation
    "As `make-inoutparam-forms', but with a type resolved to (:pointer `pointer-type')
-  This allows specializing methods for pointers to specific types, such as `win32:bstr'"))
-
-(defmethod make-inoutparam-forms (type)
-  "Attempt to parse the `type' as a cffi type, and resolve further."
-  (make-inoutparam-forms (cffi::parse-type type)))
+  This allows specializing methods for pointers to specific types, such as `win32:bstr'")
+  (:method (pointer-type)
+    (error "Don't know how to marshal in-out pointer parameter '~A' of type '~S'" *param-name* pointer-type)))
 
 (defmethod make-inoutparam-forms ((type cffi::foreign-type-alias))
   "Dispatch to the actual type of the alias"
@@ -91,7 +109,14 @@
    `(string-to-ptr ,*param-tmp-name* ,*param-name* ,(cffi::encoding type))
    `(ptr-to-string ,*param-tmp-name* ,(cffi::encoding type))))
 
-(defmethod make-inoutparam-ptr-forms (pointer-type)
+(defmethod make-inoutparam-ptr-forms ((pointer-type symbol))
+  "Allocate a pointer initialized with the parameter's value and query its value for the result"
+  (values
+   `(,*param-tmp-name* ',pointer-type)
+   `(setf (&* ,*param-tmp-name*) ,*param-name*)
+   `(&* ,*param-tmp-name*)))
+
+(defmethod make-inoutparam-ptr-forms ((pointer-type list))
   "Allocate a pointer initialized with the parameter's value and query its value for the result"
   (values
    `(,*param-tmp-name* ',pointer-type)
