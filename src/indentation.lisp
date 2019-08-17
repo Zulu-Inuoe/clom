@@ -6,4 +6,3 @@
     `(eval-when (:compile-toplevel :load-toplevel :execute)
        (when-let (,ti-package (find-package '#:trivial-indent))
          (funcall (fdefinition `(setf ,(intern "INDENTATION" ,ti-package))) ',rule ',symbol)))))
-
