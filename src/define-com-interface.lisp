@@ -1,22 +1,20 @@
 (in-package #:clom)
 
-(defun param-name (param)
-  (car param))
+(defstruct (param-spec
+            (:type list)
+            (:constructor make-param-spec (name type flags)))
+  (name (required-argument :name)
+   :type symbol)
+  (type (required-argument :type)
+   :type foreign-type)
+  (flags (required-argument :flags)
+   :type list))
 
-(defun param-type (param)
-  (cadr param))
-
-(defun param-flag (param flag)
-  (assoc-value (cddr param) flag))
-
-(defun param-default-form (param)
-  (param-flag param :default))
-
-(defun parse-param-flags (flags)
-  "Parse out a list of parameter flags into an alist of (keyword . value) pairs.
+(defun parse-param-spec-flags (spec-flags)
+  "Parse out a list of parameter spec-flags into an alist of (keyword . value) pairs.
   Signals errors on unknown keywords, duplicate flags, etc."
   (loop
-    :for rest := flags :then (cdr rest)
+    :for rest := spec-flags :then (cdr rest)
     :while rest
     :for flag := (car rest)
     :when
@@ -40,124 +38,22 @@
          (push '(:in . t) result))
        (return result)))
 
-(defun parse-param (param-spec)
+(defun parse-param-spec (param-spec)
   "Parse out a parameter spec into `(name type . flags)', verifying them along the way."
   (destructuring-bind (name type &rest flags) param-spec
     (check-type name symbol)
     (check-type type foreign-type)
-    (list* name type (parse-param-flags flags))))
+    (make-param-spec name type (parse-param-spec-flags flags))))
 
 (defun parse-method-params (param-specs)
-  (let ((ret (mapcar #'parse-param param-specs)))
-    (when-let ((retvals (remove-if-not (lambda (param) (param-flag param :retval)) ret)))
+  "Parse out the parameter specs for a method declaration.
+ Each param-spec is of the form
+   (name type flags*)"
+  (let ((ret (mapcar #'parse-param-spec param-specs)))
+    (when-let ((retvals (remove-if-not (lambda (param) (assoc :retval (param-spec-flags param))) ret)))
       (when (cdr retvals)
-        (error "Duplicate parameters with `:retval' flag: ~A" (mapcar #'param-name retvals))))
+        (error "Duplicate parameters with `:retval' flag: ~A" (mapcar #'param-spec-name retvals))))
     ret))
-
-(defvar *param-name* nil
-  "The name of the parameter being processed by `make-outparam-forms' or `make-inoutparam-forms'.
-  This describes the CL variable binding.")
-
-(defvar *param-tmp-name* nil
-  "The 'temporary' parameter name being processed by `make-outparam-forms' or `make-inoutparam-forms'.
-  This describes the foreign variable binding.")
-
-(defgeneric make-outparam-forms (type)
-  (:documentation
-   "Create 'binding' and 'result' forms to use when unmarshalling an 'out' parameter
-  `type' - The type of the parameter
-  Should return two values:
-    1. A binding form suitable for `cffi:with-foreign-objects' or nil, if no binding necessary
-    2. A form suitable for obtaining the CL value of the output parameter."))
-
-(defgeneric make-outparam-ptr-forms (pointer-type)
-  (:documentation
-   "As `make-outparam-forms', but with a type resolved to (:pointer `pointer-type')
-  This allows specializing methods for pointers to specific types, such as `win32:bstr'"))
-
-(defmethod make-outparam-forms (type)
-  "Attempt to parse the `type' as a cffi type, and resolve further."
-  (make-outparam-forms (cffi::parse-type type)))
-
-(defmethod make-outparam-forms ((type cffi::foreign-type-alias))
-  "Dispatch to the actual type of the alias."
-  (make-outparam-forms (cffi::actual-type type)))
-
-(defmethod make-outparam-forms ((type cffi::foreign-typedef))
-  "Dispatch to the actual type of the typedef"
-  (make-outparam-forms (cffi::actual-type type)))
-
-(defmethod make-outparam-forms ((type cffi::foreign-pointer-type))
-  "Resolve a pointer type via `make-outparam-ptr-forms'"
-  (let ((pointer-type (cffi::unparse-type (cffi::pointer-type type))))
-    (make-outparam-ptr-forms pointer-type)))
-
-(defmethod make-outparam-forms ((type cffi::foreign-string-type))
-  (error "Bare string marshalling not implemented"))
-
-(defmethod make-outparam-ptr-forms (pointer-type)
-  "Base implementation that simply retrieves the value via `cffi:mem-ref'"
-  (values
-   `(,*param-tmp-name* ',pointer-type)
-   `(&* ,*param-tmp-name*)))
-
-(defmethod make-outparam-ptr-forms ((pointer-type (eql 'win32:bstr)))
-  "Unmarshall a `win32:bstr' into a CL string"
-  (values
-   `(,*param-tmp-name* 'win32:bstr)
-   `(bstr-to-lisp (&* ,*param-tmp-name*))))
-
-(defgeneric make-inoutparam-forms (type)
-  (:documentation
-   "Create `binding' and `result' forms to use when marshalling and unmarshalling an 'inout' parameter
-  `type' - The type of the parameter
-  Should return three values:
-    1. A binding form suitable for `cffi:with-foreign-objects' or nil, if no binding necessary
-    2. An 'init' form with which to initialize the parameter, or nil if no init necessary
-    3. A form suitable for obtaining the CL value of the output parameter."))
-
-(defgeneric make-inoutparam-ptr-forms (pointer-type)
-  (:documentation
-   "As `make-inoutparam-forms', but with a type resolved to (:pointer `pointer-type')
-  This allows specializing methods for pointers to specific types, such as `win32:bstr'"))
-
-(defmethod make-inoutparam-forms (type)
-  "Attempt to parse the `type' as a cffi type, and resolve further."
-  (make-inoutparam-forms (cffi::parse-type type)))
-
-(defmethod make-inoutparam-forms ((type cffi::foreign-type-alias))
-  "Dispatch to the actual type of the alias"
-  (make-inoutparam-forms (cffi::actual-type type)))
-
-(defmethod make-inoutparam-forms ((type cffi::foreign-typedef))
-  "Dispatch to the actual type of the typedef"
-  (make-inoutparam-forms (cffi::actual-type type)))
-
-(defmethod make-inoutparam-forms ((type cffi::foreign-pointer-type))
-  "Dispatch to `make-inoutparam-ptr-forms' with the pointer's type"
-  (let ((pointer-type (cffi::unparse-type (cffi::pointer-type type))))
-    (make-inoutparam-ptr-forms pointer-type)))
-
-(defmethod make-inoutparam-forms ((type cffi::foreign-string-type))
-  "Allocate a temporary buffer with the string's contents and coerce back to a CL string"
-  (values
-   `(,*param-tmp-name* ':uint8 (babel:string-size-in-octets ,*param-name* :encoding ,(cffi::encoding type)))
-   `(string-to-ptr ,*param-tmp-name* ,*param-name* ,(cffi::encoding type))
-   `(ptr-to-string ,*param-tmp-name* ,(cffi::encoding type))))
-
-(defmethod make-inoutparam-ptr-forms (pointer-type)
-  "Allocate a pointer initialized with the parameter's value and query its value for the result"
-  (values
-   `(,*param-tmp-name* ',pointer-type)
-   `(setf (&* ,*param-tmp-name*) ,*param-name*)
-   `(&* ,*param-tmp-name*)))
-
-(defmethod make-inoutparam-ptr-forms ((pointer-type (eql 'win32:bstr)))
-  "Allocate a `win32:bstr' initialized to the parameter's string value, and convert back to a CL string for the result."
-  (values
-   `(,*param-tmp-name* 'win32:bstr)
-   `(setf (&* ,*param-tmp-name*) (lisp-to-bstr ,*param-name*))
-   `(bstr-to-lisp (&* ,*param-tmp-name*))))
 
 (defun build-param-forms (params)
   "Builds up forms for defining a function call based on `params'
@@ -183,13 +79,13 @@
         ;; Any out variable result forms
         (result-forms ()))
     (dolist (param (reverse params))
-      (let ((name (param-name param))
-            (type (param-type param)))
-        (macrolet ((flag (flag) `(param-flag param ,flag)))
+      (let ((name (param-spec-name param))
+            (type (param-spec-type param)))
+        (macrolet ((flag (flag) `(assoc-value (param-spec-flags param) ,flag)))
           (when (flag :opt)
-            (push`(setf ,name (or ,name ,(param-default-form param))) init-forms)
+            (push`(setf ,name (or ,name ,(flag :default))) init-forms)
             (unless req-names
-              (push `(,name ,(param-default-form param)) opt-forms)))
+              (push `(,name ,(flag :default)) opt-forms)))
           (cond
             ((and (flag :in) (flag :out))
              ;; inout
@@ -256,44 +152,46 @@
          ;; Body
          `((declare (type cffi:foreign-pointer ,this-sym))
            ,@default-init-forms
-           (with-foreign-objects* (,@bind-forms)
-             ,@bind-init-forms
-             ,@(let ((funcall-form
-                       `(cffi:foreign-funcall-pointer
-                         (cffi:foreign-slot-value (cffi:foreign-slot-value ,this-sym ',if-name 'vtbl) ',if-vtbl-struct ',method-name)
-                         (:convention ,convention)
-                         :pointer ,this-sym
-                         ,@call-forms
-                         ,return-type)))
-                 (cond
-                   ((and (eq return-type 'win32:hresult) result-forms)
-                    ;; Return type is hresult, and we have output params.
-                    ;; Check error and then return the out param values.
-                    `((check-com-error ,funcall-form)
-                      (values ,@result-forms)))
-                   ((eq return-type 'win32:hresult)
-                    ;; Return type is hresult, and no output params.
-                    ;; Check hresult error and return it
-                    `((check-com-error ,funcall-form)))
-                   ((eq (cffi::canonicalize-foreign-type return-type) :void)
-                    ;; No return type other than the result forms, if any
-                    `(,funcall-form
-                      (values ,@result-forms)))
-                   (t
-                    ;; Return type is not hresult. Return its value directly, and
-                    ;; as well as any (maybe zero) out params
-                    `((values
-                       ,funcall-form
-                       ,@result-forms))))))))))))
-
-(defun valid-iid-p (iid-str)
-  (let ((scanner (load-time-value
-                  (cl-ppcre:create-scanner "(?im)^{[0-9A-F]{8}[-]?(?:[0-9A-F]{4}[-]?){3}[0-9A-F]{12}}$"))))
-    (and (stringp iid-str)
-         (cl-ppcre:scan scanner iid-str)
-         t)))
+           ,@(let ((body-forms
+                     `(,@bind-init-forms
+                       ,@(let ((funcall-form
+                                 `(cffi:foreign-funcall-pointer
+                                   (cffi:foreign-slot-value (cffi:foreign-slot-value ,this-sym ',if-name 'vtbl) ',if-vtbl-struct ',method-name)
+                                   (:convention ,convention)
+                                   :pointer ,this-sym
+                                   ,@call-forms
+                                   ,return-type)))
+                           (cond
+                             ((and (eq return-type 'win32:hresult) result-forms)
+                              ;; Return type is hresult, and we have output params.
+                              ;; Check error and then return the out param values.
+                              `((check-com-error ,funcall-form)
+                                (values ,@result-forms)))
+                             ((eq return-type 'win32:hresult)
+                              ;; Return type is hresult, and no output params.
+                              ;; Check hresult error and return it
+                              `((check-com-error ,funcall-form)))
+                             ((eq (cffi::canonicalize-foreign-type return-type) :void)
+                              ;; No return type other than the result forms, if any
+                              `(,funcall-form
+                                (values ,@result-forms)))
+                             (t
+                              ;; Return type is not hresult. Return its value directly, and
+                              ;; as well as any (maybe zero) out params
+                              `((values
+                                 ,funcall-form
+                                 ,@result-forms))))))))
+               (if bind-forms
+                   ;; Only wrap it up in `with-foreign-objects' if we have any bindings
+                   `((with-foreign-objects* (,@bind-forms)
+                       ,@body-forms))
+                   body-forms))))))))
 
 (defmacro define-com-interface (if-name iid (&optional base) &body methods)
+  "Defines a com interface with name `if-name' and `iid', optionally inheriting from `base'.
+ `methods' describes a list of method declarations of the form
+ (name (flags*) return-type
+   (arg-name arg-type arg-flags*))"
   (unless (valid-iid-p iid)
     (error "Invalid iid: ~A" iid))
   (let* ((if-vtbl-struct (intern (format nil "~A-VTBL" if-name)))
@@ -319,7 +217,7 @@
              :for setter-p := (member (getf method-properties :invoke-kind) '(:prop-put :prop-put-ref))
              :for fn-name := (intern (format nil "~A-~A" if-name method-name))
              :for defun-name := (if (not setter-p) fn-name `(setf ,fn-name))
-             :for defun-lambda-list := (if (not setter-p) lambda-list (reverse lambda-list))
+             :for defun-lambda-list := (if (not setter-p) lambda-list (cons (lastcar lambda-list) (butlast lambda-list)))
              :collecting `(defun ,defun-name ,defun-lambda-list ,@body)))
 
        ;; Set interface attributes
@@ -332,6 +230,5 @@
           (interface-vtbl-struct ',if-name) ',if-vtbl-struct))
        ',if-name)))
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (when-let (ti (find-package '#:trivial-indent))
-    (funcall (fdefinition `(setf ,(intern "INDENTATION" ti))) '(6 4 6 &rest (&whole 2 1 4 4 &rest 2)) 'define-com-interface)))
+(define-indentation define-com-interface
+    (6 4 6 &rest (&whole 2 1 4 4 &rest 2)))

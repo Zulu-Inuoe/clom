@@ -1,4 +1,38 @@
-(in-package #:clom)
+(defpackage #:clom-cffi+
+  (:use
+   #:alexandria
+   #:cl)
+  (:export
+   #:foreign-type-p
+   #:foreign-type
+   #:foreign-pointer-type-p
+   #:foreign-pointer-type
+
+   #:cffi-type
+   #:with-foreign-object*
+   #:with-foreign-objects*
+   #:with-foreign-slots*
+   #:cffi-let
+   #:cffi-let*
+
+   #:&*))
+
+(in-package #:clom-cffi+)
+
+;;; Utilities on top of CFFI to simplify usage
+;;; Primarily relies on cltl2 environments to define a `cffi-type' decl which
+;;; is then used to infer pointer type for `mem-aref' through `&*'.
+;;;
+;;; (cffi:with-foreign-object (x :uint32)
+;;;   (setf (cffi:mem-aref x :uint32) 5)
+;;;   (cffi:mem-aref x :uint32))
+;;;
+;;; can be equivalently written as
+;;;
+;;; (with-foreign-object* (x :uint32)
+;;;   (setf (&* x) 5)
+;;;   (&* x))
+;;;
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun foreign-type-p (foreign-type)
@@ -62,7 +96,7 @@
   `(cffi:with-foreign-object (,var ,type ,count)
      (locally
          (declare (type cffi:foreign-pointer ,var))
-         (declare (cffi-type ,(eval type) ,var))
+       (declare (cffi-type ,(eval type) ,var))
        ,@body)))
 
 (defmacro with-foreign-objects* (bindings &body body)
@@ -70,7 +104,7 @@
       `(with-foreign-object* ,(car bindings)
          (with-foreign-objects* ,(cdr bindings)
            ,@body))
-      `(progn ,@body)))
+      `(locally ,@body)))
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defgeneric type-pointer-type (type)
@@ -119,30 +153,47 @@
        (locally ,@decls
          ,@body))))
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun %build-bindings-and-decls (bindings)
+    "Returns as two values the bindings list and decls list for a `cffi-let'/`cffi-let*'
+ `bindings' - A list of bindings of the form (var ffi-type &optional value)"
+    (loop
+      :with bind-forms := ()
+      :with decl-forms := ()
+      :for binding :in bindings
+      :do
+         (destructuring-bind (var type &optional (value '(cffi:null-pointer))) binding
+           (check-type var symbol)
+           (check-type type foreign-type)
+           (push `(,var ,value) bind-forms)
+           (push `(declare (cffi-type ,type ,var)) decl-forms))
+      :finally
+         (setf bind-forms (nreverse bind-forms)
+               decl-forms (nreverse decl-forms))
+         (when bind-forms
+           (push `(declare (type cffi:foreign-pointer ,@(mapcar #'car bind-forms)))
+                 decl-forms))
+         (return (values bind-forms decl-forms)))))
+
 (defmacro cffi-let ((&rest bindings) &body body)
   "Similar to `let', but each binding is as follows:
   (var type &optional (value (cffi:null-pointer)))
   Will declare the `cffi-type' of each binding."
-  (loop
-    :with bind-forms := ()
-    :with decl-forms := ()
-    :for binding :in bindings
-    :do
-       (destructuring-bind (var type &optional (value '(cffi:null-pointer))) binding
-         (check-type var symbol)
-         (check-type type foreign-type)
-         (push `(,var ,value) bind-forms)
-         (push `(declare (cffi-type ,type ,var)) decl-forms))
-    :finally
-       (setf bind-forms (nreverse bind-forms)
-             decl-forms (nreverse decl-forms))
-       (when bind-forms
-         (push `(declare (type cffi:foreign-pointer ,@(mapcar #'car bind-forms)))
-               decl-forms))
-       (return
-         `(let ,bind-forms
-            ,@decl-forms
-            ,@body))))
+  (multiple-value-bind (bind-forms decl-forms)
+      (%build-bindings-and-decls bindings)
+    `(let ,bind-forms
+       ,@decl-forms
+       ,@body)))
+
+(defmacro cffi-let* ((&rest bindings) &body body)
+  "Similar to `let*', but each binding is as follows:
+  (var type &optional (value (cffi:null-pointer)))
+  Will declare the `cffi-type' of each binding."
+  (multiple-value-bind (bind-forms decl-forms)
+      (%build-bindings-and-decls bindings)
+    `(let* ,bind-forms
+       ,@decl-forms
+       ,@body)))
 
 ;; (defmacro &-> (variable &rest slot-path &environment env)
 ;;   (loop

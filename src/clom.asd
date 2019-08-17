@@ -5,21 +5,21 @@
   :license "CC0 1.0 Universal"
   :serial t
   :components
-  ((:file "package")
-   (:file "cffi+")
-   (:file "strings")
-   (:file "com-error")
+  ((:file "cffi+")
+   (:file "package")
    (:file "getprop")
+   (:file "strings")
+   (:file "iid")
+   (:file "indentation")
+   (:file "com-error")
    (:file "com-interface")
+   (:file "marshaling")
    (:file "define-com-interface")
-   (:file "i-unknown")
-   (:file "oaidl"))
+   (:file "i-unknown"))
   :depends-on
   (#:alexandria
    #:babel
    #:cffi
    #:cl-ppcre
    #:win32
-   #:trivial-cltl2
-   #:trivial-indent
-   #:exit-hooks))
+   #:trivial-cltl2))

@@ -1,7 +1,8 @@
 (defpackage #:clom
   (:use
    #:alexandria
-   #:cl)
+   #:cl
+   #:clom-cffi+)
   (:export
    #:com-error
    #:com-error-hresult
