@@ -1,4 +1,4 @@
-(in-package #:clom)
+(in-package #:clom-automation)
 
 #| Forward Declarations |#
 
