@@ -9,10 +9,6 @@
    (:file "oaidl"))
   :depends-on
   (#:alexandria
-   #:babel
    #:cffi
-   #:cl-ppcre
-   #:win32
-   #:trivial-cltl2
-   #:trivial-indent
-   #:exit-hooks))
+   #:clom
+   #:win32))
