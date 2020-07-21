@@ -19,11 +19,11 @@
               (cffi-let ((tstr win32:tchar (&* result)))
                 ;; Cut LF
                 (when (and (> tchar-count 0)
-                           (= (&* tstr (- tchar-count 1)) 10))
+                           (= (&* tstr (1- tchar-count)) 10))
                   (decf tchar-count)
                   ;; Cut CR
                   (when (and (> tchar-count 0)
-                             (= (&* tstr (- tchar-count 1)) 13))
+                             (= (&* tstr (1- tchar-count)) 13))
                     (decf tchar-count)))
                 (tstring-to-lisp tstr :count tchar-count))
            (win32:local-free (&* result))))
