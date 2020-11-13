@@ -14,6 +14,7 @@
    #:with-foreign-slots*
    #:cffi-let
    #:cffi-let*
+   #:sizeof
 
    #:&*))
 
@@ -194,6 +195,13 @@
     `(let* ,bind-forms
        ,@decl-forms
        ,@body)))
+
+(defmacro sizeof (exp &environment env)
+  (let ((type (and (symbolp exp)
+                   (cffi-type exp env))))
+    (if type
+        (cffi:foreign-type-size type)
+        (cffi:foreign-type-size exp))))
 
 ;; (defmacro &-> (variable &rest slot-path &environment env)
 ;;   (loop
